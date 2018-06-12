@@ -1,0 +1,243 @@
+<% if @application[:enable_redirect] %>
+server {
+     listen 80;
+     server_name www.<%= @domains.first %>;
+     return 301 $scheme://<%= @domains.first %>$request_uri;
+}
+<% end %>
+
+<% if @application[:enable_ssl] and @application[:enforce_ssl] -%>
+server {
+    listen 80;
+    server_name *.<%= @domains.first %> <%= @domains.first %>;
+    return 301 https://<%= @domains.first %>$request_uri;
+}
+<% else %>
+server {
+    listen   80;
+    server_name  <%= @domains.join(" ") %>;
+    access_log  <%= node['nginx_app']['log_dir'] %>/<%= @params[:name] %>.access.log;
+    index index.php;
+    root   <%= @application[:absolute_document_root] %>;
+  
+  <% if ::File.exist?(@application_rules) %>
+    <%= render @application_rules, :local => true %>
+  <% end %>
+  
+    # Block all svn access
+    if ($request_uri ~* ^.*\.svn.*$) {
+       return 404;
+    }
+    
+    # Block all git access
+    if ($request_uri ~* ^.*\.git.*$) {
+       return 404;
+    }
+    
+    location /nginx_status {
+      stub_status on;
+      access_log off;
+      allow 127.0.0.1;
+      deny all;
+    }
+    
+    location ~* \.(ico|css|js|gif|jpe?g|png)(\?[0-9]+)?$ {
+      expires max;
+      log_not_found off;
+    }
+  
+  <% unless File.directory?(@application_tpl) %>
+   location / {
+      try_files $uri $uri/ /index.php;
+    }
+  <% else %>
+    location / {
+      index index.php;
+      try_files $uri $uri/ /index.php?$query_string;
+    }
+  <% end %>
+  
+  <% if @application['nodejs'] -%>
+    <% if ! node['webhooks'].nil? && ! node['webhooks']['nodejs'].empty? %>
+      location /<%= @application['nodejs']['path'] %>/ {
+        proxy_pass http://<%= node['webhooks']['nodejs'] %>:<%= @application['nodejs']['port'] %>;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+      }
+     <% if @application['nodejs']['is_socket'] -%>
+        location /socket.io/ {
+          proxy_pass http://<%= node['webhooks']['nodejs'] %>:<%= @application['nodejs']['port'] %>;
+          proxy_redirect off;
+          proxy_buffering off;
+  
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "Upgrade";
+        }
+     <% end -%>
+     <% if @application['nodejs']['is_socket'] -%> 
+      location /socket.io/ {
+        proxy_pass http://<%= node['webhooks']['nodejs'] %>:<%= @application['nodejs']['port'] %>;
+        proxy_redirect off;
+        proxy_buffering off;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+      }
+     <% end -%>
+      <% if @application['nodejs']['is_static'] -%>
+      location /static/ {
+        root <%= @application[:absolute_document_root] %>/<%= @application['nodejs']['path'] %>/public;
+      }
+      <% end %>
+    <% else %>
+      <% Chef::Log.info "Webhooks was not defined or empty!" %>
+    <% end %>
+  <% end %>
+  
+    location ~* \.php$ {
+      fastcgi_index index.php;
+      fastcgi_pass phpfpm;
+      include       fastcgi_params;
+      fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+      fastcgi_param SCRIPT_NAME     $fastcgi_script_name;
+      fastcgi_param CI_ENV <%= @environment %>;
+    }
+    
+}
+<% end %>
+
+<% if @application[:enable_ssl] -%>
+<% if @application[:enforce_nossl] -%>
+server {
+	listen 443;
+	server_name <%= @domains.join(" ") %>;
+	return 301 http://<%= @domains.first %>$request_uri;
+	access_log <%= node['nginx_app'][:log_dir] %>/<%= @params[:name] %>-ssl.access.log;
+	index index.php;
+	root <%= @application[:absolute_document_root] %>;
+
+	<% if ::File.exist?(@application_rules) -%>
+	<%= render @application_rules, :local => true %>
+	<% end -%>
+	  
+	ssl on;
+	ssl_certificate /etc/nginx/ssl/<%= @params[:name] %>.crt;
+	ssl_certificate_key /etc/nginx/ssl/<%= @params[:name] %>.key;
+	<% if @application[:ssl_configuration][:chain] -%>
+	ssl_client_certificate /etc/nginx/ssl/<%= @params[:name] %>.ca;
+	<% end -%>
+	
+	# Block all svn access
+	if ($request_uri ~* ^.*\.svn.*$) {
+		return 404;
+	}
+
+	location ~* \.php$ {
+		fastcgi_index index.php;
+		fastcgi_pass phpfpm;
+		include       fastcgi_params;
+		fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+		fastcgi_param SCRIPT_NAME     $fastcgi_script_name;
+		fastcgi_param CI_ENV <%= @environment %>;
+	}
+}
+<% else -%>
+server {
+    listen   443;
+    server_name  <%= @domains.join(" ") %>;
+    access_log  <%= node['nginx_app']['log_dir'] %>/<%= @domains.first %>-ssl.access.log;
+    index index.php;
+    root   <%= @application[:absolute_document_root] %>;  
+  
+    <% if ::File.exist?(@application_rules) %>
+      <%= render @application_rules, :local => true %>
+    <% end %>
+  
+    ssl on;
+    ssl_certificate /etc/nginx/ssl/<%= @params[:name] %>.crt;
+    ssl_certificate_key /etc/nginx/ssl/<%= @params[:name] %>.key;
+    <% if @application[:ssl_configuration][:chain] -%>
+    ssl_client_certificate /etc/nginx/ssl/<%= @params[:name] %>.ca;
+    <% end -%>
+    
+    # Block all svn access
+    if ($request_uri ~* ^.*\.svn.*$) {
+       return 404;
+    }
+    
+    # Block all git access
+    if ($request_uri ~* ^.*\.git.*$) {
+       return 404;
+    }
+    
+  <% unless File.directory?(@application_tpl) %>
+   location / {
+      try_files $uri $uri/ /index.php;
+    }
+  <% else %>
+    location / {
+      index index.php;
+      try_files $uri $uri/ /index.php?$query_string;
+    }
+  <% end %>
+  
+  <% if @application['nodejs'] -%>
+    <% if ! node['webhooks'].nil? && ! node['webhooks']['nodejs'].empty? %>
+      location /<%= @application['nodejs']['path'] %>/ {
+        proxy_pass http://<%= node['webhooks']['nodejs'] %>:<%= @application['nodejs']['port'] %>;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+      }
+     <% if @application['nodejs']['is_socket'] -%> 
+        location /socket.io/ {
+          proxy_pass http://<%= node['webhooks']['nodejs'] %>:<%= @application['nodejs']['port'] %>;
+          proxy_redirect off;
+          proxy_buffering off;
+  
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "Upgrade";
+        }
+     <% end -%>
+
+     <% if @application['nodejs']['is_static'] -%>
+      location /static/ {
+        root <%= @application[:absolute_document_root] %>/<%= @application['nodejs']['path'] %>/public;
+      }
+     <% end %>
+    <% else %>
+      <% Chef::Log.info "Webhooks was not defined or empty!" %>
+    <% end %>
+  <% end %>
+  
+     location ~* \.php$ {
+      fastcgi_index index.php;
+      fastcgi_pass phpfpm;
+      include       fastcgi_params;
+      fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+      fastcgi_param SCRIPT_NAME     $fastcgi_script_name;
+      fastcgi_param CI_ENV <%= @environment %>;
+    }  
+}
+<% end -%>
+<% end -%>

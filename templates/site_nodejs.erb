@@ -1,0 +1,57 @@
+server {
+    listen   80;
+    server_name  <%= @domains.join(" ") %>;
+    access_log  <%= node['nginx_app']['log_dir'] %>/<%= @params[:name] %>.access.log;
+
+    # Block all svn access
+    if ($request_uri ~* ^.*\.svn.*$) {
+        return 404;
+    }
+
+    # Block all git access
+    if ($request_uri ~* ^.*\.git.*$) {
+        return 404;
+    }
+
+    location / {
+        proxy_pass http://<%= node['webhooks']['nodejs'] %>:<%= @application['nodejs']['port'] %>;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+<% if @application[:enable_ssl] -%>
+server {
+    listen   443;
+    server_name  <%= @domains.join(" ") %>;
+    access_log  <%= node['nginx_app']['log_dir'] %>/<%= @params[:name] %>-ssl.access.log;
+
+    ssl on;
+    ssl_certificate /etc/nginx/ssl/<%= @params[:name] %>.crt;
+    ssl_certificate_key /etc/nginx/ssl/<%= @params[:name] %>.key;
+    <% if @application[:ssl_configuration][:chain] -%>
+    ssl_client_certificate /etc/nginx/ssl/<%= @params[:name] %>.ca;
+    <% end -%>
+
+    # Block all svn access
+    if ($request_uri ~* ^.*\.svn.*$) {
+        return 404;
+    }
+
+    # Block all git access
+    if ($request_uri ~* ^.*\.git.*$) {
+        return 404;
+    }
+
+    location / {
+        proxy_pass http://<%= node['webhooks']['nodejs'] %>:<%= @application['nodejs']['port'] %>;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+<% end -%>

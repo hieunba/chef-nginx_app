@@ -1,0 +1,89 @@
+server {
+  listen   80;
+  server_name  <%= @domains.join(" ") %>;
+  access_log  <%= node['nginx']['log_dir'] %>/<%= @domains.first %>.access.log;
+  index index.php;
+  <% if node['opsworks']['instance']['layers'].include?('hub') -%>
+     <%= render 'partial_nginx_post.erb', :cookbook => 'nginx-app' %>
+  <% end %>
+  root   <%= @application[:absolute_document_root] %>;
+  
+  # Block all svn access
+  if ($request_uri ~* ^.*\.svn.*$) {
+     return 404;
+  }
+  
+  # Block all git access
+  if ($request_uri ~* ^.*\.git.*$) {
+     return 404;
+  }
+  
+  location /nginx_status {
+    stub_status on;
+    access_log off;
+    allow 127.0.0.1;
+    deny all;
+  }
+  
+  location ~* \.(ico|css|js|gif|jpe?g|png)(\?[0-9]+)?$ {
+    expires max;
+    log_not_found off;
+  }
+
+  location / {
+    try_files $uri $uri/ /index.php;
+  }
+
+  location ~* \.php$ {
+    fastcgi_index index.php;
+    fastcgi_pass phpfpm;
+    include       fastcgi_params;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    fastcgi_param SCRIPT_NAME     $fastcgi_script_name;
+    fastcgi_param CI_ENV <%= @environment %>;
+  }
+  
+}
+
+<% if @application[:ssl_support] %>
+server {
+  listen   443;
+  server_name  <%= @domains.join(" ") %>;
+  access_log  <%= node['nginx']['log_dir'] %>/<%= @domains.first %>-ssl.access.log;
+  index index.php;
+  <% if node['opsworks']['instance']['layers'].include?('hub') -%>
+     <%= render 'partial_nginx_post.erb', :cookbook => 'nginx-app' %>
+  <% end %>
+  root   <%= @application[:absolute_document_root] %>;  
+  ssl on;
+  ssl_certificate /etc/nginx/ssl/<%= @domains.first %>.crt;
+  ssl_certificate_key /etc/nginx/ssl/<%= @domains.first %>.key;
+  <% if @application[:ssl_certificate_ca] -%>
+  ssl_client_certificate /etc/nginx/ssl/<%= @domains.first %>.ca;
+  <% end -%>
+  
+  # Block all svn access
+  if ($request_uri ~* ^.*\.svn.*$) {
+     return 404;
+  }
+  
+  # Block all git access
+  if ($request_uri ~* ^.*\.git.*$) {
+     return 404;
+  }
+  
+ location / {
+    try_files $uri $uri/ /index.php;
+  }
+
+  location ~* \.php$ {
+    fastcgi_index index.php;
+    fastcgi_pass phpfpm;
+    include       fastcgi_params;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    fastcgi_param SCRIPT_NAME     $fastcgi_script_name;
+    fastcgi_param CI_ENV <%= @environment %>;
+  }  
+}
+<% end %>
+
