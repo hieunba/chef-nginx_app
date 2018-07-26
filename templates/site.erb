@@ -19,6 +19,9 @@ server {
     access_log  <%= node['nginx_app']['log_dir'] %>/<%= @params[:name] %>.access.log;
     index index.php;
     root   <%= @application[:absolute_document_root] %>;
+  <% if @application[:cors] -%>
+    add_header Access-Control-Allow-Origin <%= @application[:cors] || '*'%>;
+  <% end %>
   
   <% if ::File.exist?(@application_rules) %>
     <%= render @application_rules, :local => true %>
@@ -128,6 +131,9 @@ server {
 	access_log <%= node['nginx_app'][:log_dir] %>/<%= @params[:name] %>-ssl.access.log;
 	index index.php;
 	root <%= @application[:absolute_document_root] %>;
+  <% if @application[:cors] -%>
+    add_header Access-Control-Allow-Origin <%= @application[:cors] || '*'%>;
+  <% end %>
 
 	<% if ::File.exist?(@application_rules) -%>
 	<%= render @application_rules, :local => true %>
@@ -161,6 +167,9 @@ server {
     access_log  <%= node['nginx_app']['log_dir'] %>/<%= @domains.first %>-ssl.access.log;
     index index.php;
     root   <%= @application[:absolute_document_root] %>;  
+  <% if @application[:cors] -%>
+    add_header Access-Control-Allow-Origin <%= @application[:cors] || '*'%>;
+  <% end %>
   
     <% if ::File.exist?(@application_rules) %>
       <%= render @application_rules, :local => true %>
