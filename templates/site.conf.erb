@@ -3,9 +3,7 @@ server {
   server_name  <%= @domains.join(" ") %>;
   access_log  <%= node['nginx']['log_dir'] %>/<%= @domains.first %>.access.log;
   index index.php;
-  <% if node['opsworks']['instance']['layers'].include?('hub') -%>
-     <%= render 'partial_nginx_post.erb', :cookbook => 'nginx-app' %>
-  <% end %>
+
   root   <%= @application[:absolute_document_root] %>;
   
   # Block all svn access
@@ -51,9 +49,7 @@ server {
   server_name  <%= @domains.join(" ") %>;
   access_log  <%= node['nginx']['log_dir'] %>/<%= @domains.first %>-ssl.access.log;
   index index.php;
-  <% if node['opsworks']['instance']['layers'].include?('hub') -%>
-     <%= render 'partial_nginx_post.erb', :cookbook => 'nginx-app' %>
-  <% end %>
+
   root   <%= @application[:absolute_document_root] %>;  
   ssl on;
   ssl_certificate /etc/nginx/ssl/<%= @domains.first %>.crt;
